@@ -1,0 +1,1201 @@
+---@class FreeMarket : module
+local M = {}
+
+
+--#region Global data
+---@class mod_data
+---@type table<string, table>
+local _mod_data
+
+-- {force index = {[item name] = price}}
+---@class sell_prices
+---@type table<uint, table<string, uint>>
+local _sell_prices
+
+-- {force index = {[item name] = price}}
+---@class buy_prices
+---@type table<uint, table<string, uint>>
+local _buy_prices
+
+-- {[item name] = price}
+---@class global_sell_prices
+---@type table<string, uint>
+local _global_sell_prices
+
+-- {[item name] = price}
+---@class global_buy_prices
+---@type table<string, uint>
+local _global_buy_prices
+
+-- {[force index] = uint}
+---@type table<uint, uint>
+local _last_sell_id
+
+-- {[force index] = uint}
+---@type table<uint, uint>
+local _last_buy_id
+
+-- {[force index] = {[item name] = LuaEntity[]}}
+---@class buy_markets
+---@type table<uint, table<string, LuaEntity[]>>
+local _buy_markets
+
+-- {[force index] = {[item name] = LuaEntity[]}}
+---@class buy_markets
+---@type table<uint, table<string, LuaEntity[]>>
+local _sell_markets
+
+-- {[force index] = string[]}
+---@class buy_catalogue
+---@type table<uint, string[]>
+local _buy_catalogue
+
+-- {[force index] = string[]}
+---@class sell_catalogue
+---@type table<uint, string[]>
+local _sell_catalogue
+
+---@class all_markets
+---@field [1] LuaEntity # storage
+---@field [2] LuaEntity # hidden market
+---@field [3] uint # market_type
+---@field [4] string? # item name
+local _all_markets
+
+---@class all_hidden_markets
+---@field [1] LuaEntity # market
+---@field [2] LuaEntity # storage
+---@field [3] uint? # id update
+local _all_hidden_markets
+
+--#endregion
+
+
+--#region Constants
+local tremove = table.remove
+local call = remote.call
+local floor = math.floor
+local Rget_type = rendering.get_type
+local get_render_target = rendering.get_target
+local is_render_valid = rendering.is_valid
+local print_to_rcon = rcon.print
+--#if IGNORE_MACROSES then
+	local SELL_TYPE = 2
+	local BUY_TYPE = 1
+--#else
+	--#define("SELL_TYPE", "2")
+	--#define("BUY_TYPE", "1")
+--#end
+local MARKETS_TYPES = {
+	["TSZO_sell_container_3x2"] = SELL_TYPE,
+	["TSZO_buy_container_3x2"]  = BUY_TYPE,
+}
+local HIDDEN_MARKETS_TYPES = {
+	["TSZO_hidden_sell_market_3x2"] = SELL_TYPE,
+	["TSZO_hidden_buy_market_3x2"]  = BUY_TYPE,
+}
+local MARKETS_TO_HIDDEN = {
+	["TSZO_sell_container_3x2"] = "TSZO_hidden_sell_market_3x2",
+	["TSZO_buy_container_3x2"]  = "TSZO_hidden_buy_market_3x2",
+}
+
+--#endregion
+
+
+--#region Settings
+local _update_buy_tick  = settings.global["TSZO_update-buy-tick"].value --[[@as uint]]
+local _update_sell_tick = settings.global["TSZO_update-sell-tick"].value --[[@as uint]]
+--#endregion
+
+
+--- It's not safe to set count above ~4000000000
+---@type SimpleItemStack
+local _buy_stack = {name = "", count = 0}
+
+--- It's not safe to set count above ~4000000000
+---@type SimpleItemStack
+local _sell_stack = {name = "", count = 4000000000}
+
+--#region Global functions
+
+
+---@param target  LuaForce|LuaPlayer # From whom the data?
+---@param getter? LuaForce|LuaPlayer # Print to whom? (game by default)
+function print_force_data(target, getter)
+	if getter then
+		if not getter.valid then
+			log("Invalid object")
+			return
+		end
+	else
+		getter = game
+	end
+
+	local index
+	local object_name = target.object_name
+	if object_name == "LuaPlayer" then
+		index = target.force_index
+	elseif object_name == "LuaForce" then
+		index = target.index
+	else
+		log("Invalid type")
+		return
+	end
+
+	local print_to_target = getter.print
+	print_to_target('')
+	print_to_target("Sell prices:" .. serpent.line(_sell_prices[index]))
+	print_to_target("Buy prices:"  .. serpent.line(_buy_prices[index]))
+	print_to_target("Buy markets:" .. serpent.line(_buy_markets[index]))
+end
+
+
+---@param local_data table
+---@param global_data_name string
+---@param receiver table?
+---@return boolean
+function check_local_and_global_data(local_data, global_data_name, receiver)
+	if (type(global_data_name) == "string" and local_data ~= global.TSZO[global_data_name]) then
+		local message = string.format("!WARNING! Desync has been detected in __%s__ %s. Please report and send log files to %s and try to load your game again or use /sync", script.mod_name, "mod_data[\"" .. global_data_name .. "\"]", "ZwerOxotnik")
+		log(message)
+		if game and (game.is_multiplayer() == false or receiver) then
+			message = {"EasyAPI.report-desync",
+				script.mod_name, "mod_data[\"" .. global_data_name .. "\"]", "ZwerOxotnik"
+			}
+			receiver = receiver or game
+			receiver.print(message)
+		end
+		return true
+	end
+	return false
+end
+
+---@param receiver table?
+function detect_desync(receiver)
+	check_local_and_global_data(_sell_prices, "sell_prices", receiver)
+	check_local_and_global_data(_buy_prices, "buy_prices", receiver)
+	check_local_and_global_data(_buy_markets, "buy_markets", receiver)
+	check_local_and_global_data(_sell_markets, "sell_markets", receiver)
+	check_local_and_global_data(_buy_catalogue, "buy_catalogue", receiver)
+	check_local_and_global_data(_sell_catalogue, "sell_catalogue", receiver)
+	check_local_and_global_data(_last_sell_id, "last_sell_id", receiver)
+	check_local_and_global_data(_last_buy_id, "last_buy_id", receiver)
+	check_local_and_global_data(_global_sell_prices, "global_sell_prices", receiver)
+	check_local_and_global_data(_global_buy_prices, "global_buy_prices", receiver)
+end
+
+--#endregion
+
+
+--#region Function for RCON
+
+---@param name string
+function getRconData(name)
+	print_to_rcon(game.table_to_json(_mod_data[name]))
+end
+
+---@param name string
+---@param force LuaForce
+function getRconForceData(name, force)
+	if not force.valid then return end
+	print_to_rcon(game.table_to_json(_mod_data[name][force.index]))
+end
+
+---@param name string
+---@param force_index integer
+function getRconForceDataByIndex(name, force_index)
+	print_to_rcon(game.table_to_json(_mod_data[name][force_index]))
+end
+
+--#endregion
+
+
+--#region utils
+
+
+---@param index number
+function clear_force_data(index)
+	_buy_catalogue[index]  = nil
+	_sell_catalogue[index] = nil
+	_sell_prices[index]  = nil
+	_buy_prices[index]   = nil
+	_buy_markets[index]  = nil
+	_sell_markets[index] = nil
+	_last_sell_id[index] = nil
+	_last_buy_id[index]  = nil
+end
+
+
+---@param index number
+function init_force_data(index)
+	_buy_catalogue[index]  = _buy_catalogue[index]  or {}
+	_sell_catalogue[index] = _sell_catalogue[index] or {}
+	_sell_prices[index]  = _sell_prices[index]  or {}
+	_buy_prices[index]   = _buy_prices[index]   or {}
+	_buy_markets[index]  = _buy_markets[index]  or {}
+	_sell_markets[index] = _sell_markets[index] or {}
+	_last_sell_id[index] = _last_sell_id[index] or 0
+	_last_buy_id[index]  = _last_buy_id[index]  or 0
+end
+
+
+---@param text string
+---@return string?, uint?
+function M.find_item_in_text(text)
+	local args = {}
+	for arg in string.gmatch(text, "%g+") do args[#args+1] = arg end
+
+	local item_name
+	local count_index = 1
+	local count = tonumber(args[count_index])
+	if count == nil then
+		count_index = 2
+		count = tonumber(args[count_index])
+	end
+	---@cast count uint?
+
+	if count == nil then
+		item_name = text
+	else
+		if count_index == 1 then
+			item_name = args[2]
+		elseif count_index == 2 then
+			item_name = args[1]
+		end
+	end
+
+	local prototype = game.item_prototypes[item_name]
+	if prototype == nil then
+		item_name = string.gsub(item_name, ".*%[item=(.+)%].*", "%1")
+		if item_name == nil then
+			return
+		end
+		prototype = game.item_prototypes[item_name]
+		if prototype == nil then
+			return
+		end
+	end
+	if count and count <= 0 then
+		count = nil
+	end
+
+	return item_name, count
+end
+
+
+---@param item_name string
+---@param price uint?
+function set_buy_price_globally(item_name, price)
+	_global_buy_prices[item_name] = price
+	for force_index in pairs(_buy_prices) do
+		set_force_buy_price(force_index, item_name, price)
+	end
+end
+
+
+---@param item_name string
+---@param price uint?
+function set_sell_price_globally(item_name, price)
+	_global_sell_prices[item_name] = price
+	for force_index in pairs(_sell_prices) do
+		set_force_sell_price(force_index, item_name, price)
+	end
+end
+
+
+---@param force_index uint
+---@param item_name string
+---@param price uint?
+function set_force_sell_price(force_index, item_name, price)
+	local f_sell_prices = _sell_prices[force_index]
+	if f_sell_prices == nil then return end
+
+
+	local prev_price = f_sell_prices[item_name]
+	f_sell_prices[item_name] = price
+	if (prev_price == nil and price) or (prev_price and price == nil) then
+		---@type buy_catalogue
+		local new_catalogue = {}
+		local prices = _sell_prices[force_index]
+		for _item_name in pairs(prices) do
+			new_catalogue[#new_catalogue+1] = _item_name
+		end
+		_sell_catalogue[force_index] = new_catalogue
+	end
+
+	if price == nil then
+		local markets = _sell_markets[force_index]
+		if markets and markets[item_name] then
+			markets[item_name] = nil
+		end
+	end
+
+	_last_sell_id[force_index] = _last_sell_id[force_index] + 1
+end
+
+
+---@param force_index uint
+---@param item_name string
+---@param price uint?
+function set_force_buy_price(force_index, item_name, price)
+	local f_buy_prices = _buy_prices[force_index]
+	if f_buy_prices == nil then return end
+
+	local prev_price = f_buy_prices[item_name]
+	f_buy_prices[item_name] = price
+	if prev_price == nil and price or prev_price and price == nil then
+		---@type buy_catalogue
+		local new_catalogue = {}
+		local prices = _buy_prices[force_index]
+		for _item_name in pairs(prices) do
+			new_catalogue[#new_catalogue+1] = _item_name
+		end
+		_buy_catalogue[force_index] = new_catalogue
+	end
+
+	if price == nil then
+		local markets = _buy_markets[force_index]
+		if markets and markets[item_name] then
+			markets[item_name] = nil
+		end
+	end
+
+	_last_buy_id[force_index] = _last_buy_id[force_index] + 1
+end
+
+
+---@param entity LuaEntity
+function M.remove_hidden_market(entity)
+	if entity.valid then
+		_all_hidden_markets[entity.unit_number] = nil
+		entity.destroy()
+	end
+end
+
+
+---@param entity LuaEntity
+---@param markets_data buy_markets | sell_markets
+---@param market_data all_markets?
+function M.remove_market_from_markets(entity, markets_data, market_data)
+	local force_index = entity.force_index
+	market_data = market_data or _all_markets[entity.force_index]
+	local item_name = market_data[4]
+	if item_name == nil then return end
+	local markets = markets_data[force_index]
+	local entities = markets[item_name]
+	if entities == nil then return end
+
+	for i = #entities, 1, -1 do
+		if entities[i] == entity then
+			if #entities == 1 then
+				markets[item_name] = nil
+			else
+				tremove(entities, i)
+			end
+			return
+		end
+	end
+end
+
+
+---@param entity LuaEntity
+---@param market_data all_markets
+function M.remove_certain_buy_market(entity, market_data)
+	_all_markets[entity.unit_number] = nil
+	M.remove_hidden_market(market_data[2])
+	M.remove_market_from_markets(entity, _buy_markets, market_data)
+end
+
+
+---@param entity LuaEntity
+---@param market_data all_markets
+function M.remove_certain_sell_market(entity, market_data)
+	_all_markets[entity.unit_number] = nil
+	M.remove_hidden_market(market_data[2])
+	M.remove_market_from_markets(entity, _sell_markets, market_data)
+end
+
+
+local function clear_invalid_prices(prices)
+	local item_prototypes = game.item_prototypes
+	local forces = game.forces
+	for index, forces_data in pairs(prices) do
+		if forces[index] == nil then
+			prices[index] = nil
+		else
+			for item_name in pairs(forces_data) do
+				if item_prototypes[item_name] == nil then
+					forces_data[item_name] = nil
+				end
+			end
+		end
+	end
+end
+
+
+---@param _data buy_markets
+function clear_invalid_markets_data(_data)
+	-- TODO: recheck and FIX!
+	if true then return end
+
+	local item_prototypes = game.item_prototypes
+	local forces = game.forces
+	for index, data in pairs(_data) do
+		if forces[index] == nil then
+			clear_force_data(index)
+		else
+			for item_name, entities in pairs(data) do
+				if item_prototypes[item_name] == nil then
+					data[item_name] = nil
+					goto continue
+				end
+				for i=#entities, 1, -1 do
+					local market_data = entities[i]
+					local entity = market_data[1]
+					if entity.valid == false then
+						tremove(entities, i)
+					elseif not market_data[2] then
+						tremove(entities, i)
+						_all_markets[entity.unit_number] = nil
+					else
+						local _market_data = _all_markets[entity.unit_number]
+						if _market_data == nil then
+							tremove(entities, i)
+						elseif entity ~= _market_data[1] then
+							_all_markets[entity.unit_number] = nil
+							tremove(entities, i)
+						end
+					end
+				end
+				if #entities == 0 then
+					data[item_name] = nil
+				end
+			    ::continue::
+			end
+		end
+	end
+end
+
+function clear_invalid_entities()
+	local item_prototypes = game.item_prototypes
+	for unit_number, data in pairs(_all_markets) do
+		local storage = data[1]
+		if not storage.valid then
+			_all_markets[unit_number] = nil
+		elseif not data[2].valid then
+			local hidden_market = data[2]
+			_all_hidden_markets[hidden_market.unit_number] = nil
+			hidden_market.destroy()
+			_all_markets[unit_number] = nil
+		else
+			local item_name = data[4]
+			if item_name and item_prototypes[item_name] == nil then
+				data[4] = nil
+				local market_type = data[3]
+				if market_type == BUY_TYPE then
+					M.remove_market_from_markets(storage, _buy_markets, data)
+				elseif market_type == SELL_TYPE then
+					M.remove_market_from_markets(storage, _sell_markets, data)
+				end
+			end
+		end
+	end
+
+	clear_invalid_markets_data(_buy_markets)
+	clear_invalid_markets_data(_sell_markets)
+end
+
+
+function clear_invalid_data()
+	clear_invalid_prices(_sell_prices)
+	clear_invalid_prices(_buy_prices)
+	clear_invalid_entities()
+end
+
+
+---@param storage LuaEntity
+---@param market_type unit
+M.create_force_market = function(storage, market_type)
+	local hidden_market = storage.surface.create_entity{
+		name = MARKETS_TO_HIDDEN[storage.name],
+		force = storage.force,
+		position = storage.position
+	}
+	hidden_market.minable = false
+	hidden_market.destructible = false
+	hidden_market.rotatable = false
+
+	_all_markets[storage.unit_number] = {
+		storage, hidden_market, market_type, nil
+	}
+	_all_hidden_markets[hidden_market.unit_number] = {
+		hidden_market, storage, nil
+	}
+end
+
+
+---@param item_name string
+---@param entity LuaEntity
+---@param count? number
+function M.set_force_buy_market(item_name, entity, count)
+	-- count = count or game.item_prototypes[item_name].stack_size * 11
+
+	local market_data = _all_markets[entity.unit_number]
+	local force_index = entity.force.index
+	local f_buy_markets = _buy_markets[force_index]
+	local prev_item_name = market_data[4]
+	if prev_item_name then
+		if prev_item_name == item_name then return end
+		local _entities = f_buy_markets[prev_item_name]
+		for i = #_entities, 1, -1 do
+			if _entities[i] == entity then
+				if #_entities == 1 then
+					f_buy_markets[prev_item_name] = nil
+				else
+					tremove(_entities, i)
+				end
+				break
+			end
+		end
+	end
+
+	local entities = f_buy_markets[item_name]
+	if entities == nil then
+		f_buy_markets[item_name] = {entity}
+	else
+		entities[#entities+1] = entity
+	end
+
+	market_data[4] = item_name
+end
+
+
+---@param item_name string
+---@param entity LuaEntity
+function M.set_force_sell_market(item_name, entity)
+	local market_data = _all_markets[entity.unit_number]
+	local force_index = entity.force.index
+	local f_sell_markets = _sell_markets[force_index]
+	local prev_item_name = market_data[4]
+	if prev_item_name then
+		if prev_item_name == item_name then return end
+		local _entities = f_sell_markets[prev_item_name]
+		for i = #_entities, 1, -1 do
+			if _entities[i] == entity then
+				if #_entities == 1 then
+					f_sell_markets[prev_item_name] = nil
+				else
+					tremove(_entities, i)
+				end
+				break
+			end
+		end
+	end
+
+	local entities = f_sell_markets[item_name]
+	if entities == nil then
+		f_sell_markets[item_name] = {entity}
+	else
+		entities[#entities+1] = entity
+	end
+
+	market_data[4] = item_name
+end
+
+
+---@type Ingredient
+local _market_buy_f_price = {"coin", 0}
+---@type TechnologyModifier
+local _market_buy_f_offer = {type="give-item", item=""}
+---@type Offer
+local _market_f_buy_trade = {
+	price = {_market_buy_f_price},
+	offer = _market_buy_f_offer
+}
+---@param entity LuaEntity
+---@param market_data all_hidden_markets
+add_force_items_for_buy_market = function(entity, market_data)
+	local force_index = entity.force.index
+
+	local prices = _buy_prices[force_index]
+	local add_market_item = entity.add_market_item
+	for item_name, price in pairs(prices) do
+		_market_buy_f_price[2] = price
+		_market_buy_f_offer.item = item_name
+		add_market_item(_market_f_buy_trade)
+	end
+	market_data[3] = _last_buy_id[force_index]
+end
+
+
+---@type Ingredient
+local _market_sell_f_price = {"", 1}
+---@type TechnologyModifier
+local _market_sell_f_offer = {type="give-item", item="coin", count = 1}
+---@type Offer
+local _market_f_sell_trade = {
+	price = {_market_sell_f_price},
+	offer = _market_sell_f_offer
+}
+---@param entity LuaEntity
+---@param market_data all_hidden_markets
+add_force_items_for_sell_market = function(entity, market_data)
+	local force_index = entity.force.index
+
+	local prices = _sell_prices[force_index]
+	local add_market_item = entity.add_market_item
+	for item_name, price in pairs(prices) do
+		_market_sell_f_price[1] = item_name
+		_market_sell_f_offer.count = price
+		add_market_item(_market_f_sell_trade)
+	end
+	market_data[3] = _last_sell_id[force_index]
+end
+
+--#endregion
+
+
+--#region Functions of events
+
+local REMOVE_MARKETS_FUNCS = {
+	[BUY_TYPE] = M.remove_certain_buy_market,
+	[SELL_TYPE] = M.remove_certain_sell_market
+}
+function M.clear_market_data(event)
+	local entity = event.entity
+	if not entity.valid then return end
+	local unit_number = entity.unit_number
+	local market_data = _all_markets[unit_number]
+	if market_data == nil then return end
+
+	REMOVE_MARKETS_FUNCS[market_data[3]](entity, market_data)
+end
+
+---@param entity LuaEntity
+function clear_market_data_by_entity(entity)
+	local unit_number = entity.unit_number
+	local market_data = _all_markets[unit_number]
+	if market_data == nil then return end
+
+	REMOVE_MARKETS_FUNCS[market_data[3]](entity, market_data)
+	return true
+end
+
+
+function M.on_player_joined_game(event)
+	local player = game.get_player(event.player_index)
+	if not (player and player.valid) then return end
+
+	if #game.connected_players == 1 then
+		detect_desync()
+	end
+end
+
+
+function M.on_force_created(event)
+	local force = event.force
+	if force.valid then
+		init_force_data(force.index)
+	end
+end
+
+
+M.on_forces_merging = function(event)
+	local source = event.source
+	local source_index = source.index
+
+	clear_force_data(source_index)
+
+	local ids = rendering.get_all_ids()
+	for i = 1, #ids do
+		local id = ids[i]
+		if is_render_valid(id) then
+			local target = get_render_target(id)
+			if target then
+				local entity = target.entity
+				if (not (entity and entity.valid) or entity.force == source) and Rget_type(id) == "text" then
+					_all_markets[entity.unit_number] = nil
+				end
+			end
+		end
+	end
+end
+
+
+---@param event on_built_entity | on_robot_built_entity
+M.on_built_entity = function(event)
+	local entity = event.created_entity
+	if not entity.valid then return end
+	local market_type = MARKETS_TYPES[entity.name]
+	if market_type == nil then return end
+
+	M.create_force_market(entity, market_type)
+end
+
+
+---@param event script_raised_built
+M.script_raised_built = function(event)
+	local entity = event.entity
+	if not entity.valid then return end
+
+	local market_type = MARKETS_TYPES[entity.name]
+	if market_type == nil then return end
+
+	M.create_force_market(entity, market_type)
+end
+
+
+-- TODO: recheck?
+---@param event on_entity_cloned
+-- local function on_entity_cloned(event)
+-- 	local source = event.source
+-- 	if not (source and source.valid) then return end
+-- 	local market_data = _all_markets[source.unit_number]
+-- 	if market_data == nil then return end
+
+-- 	local destination = event.destination
+-- 	if not (destination and destination.valid) then return end
+
+-- 	local destination_market_data = _all_markets[destination.unit_number]
+-- 	if destination_market_data then
+-- 		REMOVE_MARKETS_FUNCS[destination_market_data[3]](destination, destination_market_data)
+-- 	end
+
+-- 	local market_type = market_data[3]
+-- 	if market_type == BUY_TYPE then
+-- 		M.set_force_buy_market(market_data[4], destination)
+-- 	elseif market_type == SELL_TYPE then
+-- 		M.set_force_sell_market(market_data[4], destination)
+-- 	end
+-- end
+
+
+---@param event on_market_item_purchased
+function M.on_market_item_purchased(event)
+	local entity = event.market
+	if not (entity and entity.valid) then return end
+	---@cast entity LuaEntity
+	local market_type = HIDDEN_MARKETS_TYPES[entity.name]
+	if market_type == nil then return end
+	local player = game.get_player(event.player_index)
+	if not (player and player.valid) then return end
+	local market_data = _all_hidden_markets[entity.unit_number]
+	if not market_data then return end
+
+	local force_index = entity.force.index
+	if market_type == BUY_TYPE then
+		local item_name = _buy_catalogue[force_index][event.offer_index]
+		M.set_force_buy_market(item_name, market_data[2])
+	elseif market_type == SELL_TYPE then
+		local item_name = _sell_catalogue[force_index][event.offer_index]
+		M.set_force_sell_market(item_name, market_data[2])
+	end
+end
+
+
+-- TODO: Recheck it in Factorio 1.2.*
+---@param event on_gui_opened
+M.on_gui_opened = function(event)
+	local entity = event.entity
+	if not (entity and entity.valid) then return end
+	local market_type = HIDDEN_MARKETS_TYPES[entity.name]
+	if market_type == nil then return end
+	local player = game.get_player(event.player_index)
+	if not (player and player.valid) then return end
+	local market_data = _all_hidden_markets[entity.unit_number]
+	if not market_data then return end
+	local entity_force = entity.force
+	if entity_force ~= player.force then
+		player.opened = nil
+		return
+	end
+
+	local market_buy_id = market_data[2]
+	if market_buy_id ~= nil then
+		entity.clear_market_items()
+	elseif market_type == BUY_TYPE then
+		if _last_buy_id[entity_force.index] == market_buy_id then
+			return
+		end
+	elseif market_type == SELL_TYPE then
+		if _last_sell_id[entity_force.index] == market_buy_id then
+			return
+		end
+	end
+
+	if market_type == BUY_TYPE then
+		add_force_items_for_buy_market(entity, market_data)
+	elseif market_type == SELL_TYPE then
+		add_force_items_for_sell_market(entity, market_data)
+	end
+end
+
+
+function M.check_buy_markets()
+	local last_checked_index = _mod_data.last_checked_index
+	local buyer_index
+	buyer_index, buyer_index = next(_buy_markets, last_checked_index)
+	_mod_data.last_checked_index = buyer_index
+	if buyer_index == nil then
+		return
+	end
+
+	local items_data = _buy_markets[buyer_index]
+	-- TODO: improve \/
+	if items_data == nil then return end
+
+	local forces_money = call("EasyAPI", "get_forces_money")
+	---@cast forces_money table<uint, integer>
+	local buyer_money = forces_money[buyer_index]
+	if buyer_money == nil or buyer_money <= 0 then
+		return
+	end
+
+	local stack_count = 0 -- for optimization
+	local f_buy_prices = _buy_prices[buyer_index]
+	local inserted_count_in_total = 0
+	for item_name, entities in pairs(items_data) do
+		if 0 >= buyer_money then
+			-- TODO: improve
+			goto not_enough_money
+		end
+		local buy_price = f_buy_prices[item_name]
+		if buy_price and buyer_money >= buy_price then
+			for i=#entities, 1, -1 do
+				local buy_market = entities[i]
+				--#if EXTRA_STABILITY then
+					if not buy_market.valid then
+						tremove(entities, i)
+						goto skip_buy
+					end
+				--#end
+				local purchasable_count = buyer_money / buy_price
+				if purchasable_count < 1 then
+					goto skip_buy
+				else
+					purchasable_count = floor(purchasable_count)
+				end
+				local need_count = 60 * 11 -- TODO: change and check
+				if purchasable_count < need_count then
+					need_count = purchasable_count
+				end
+				local count = buy_market.get_item_count(item_name)
+				_buy_stack["name"] = item_name
+				if need_count < count then
+					stack_count = count
+				else
+					need_count = need_count - count
+					if need_count <= 0 then
+						goto skip_buy
+					end
+				end
+				local found_items = need_count - stack_count
+				if found_items > 0 then
+					_buy_stack["count"] = found_items
+					local inserted_count = buy_market.insert(_buy_stack)
+					inserted_count_in_total = inserted_count_in_total + inserted_count
+					buyer_money = buyer_money - (inserted_count * buy_price)
+				end
+				:: skip_buy ::
+			end
+		end
+	end
+	:: not_enough_money ::
+	forces_money[buyer_index] = buyer_money
+
+	local forces = game.forces
+	call("EasyAPI", "set_forces_money", forces_money)
+	for _force_index, money in pairs(forces_money) do
+		local prev_money = forces_money[_force_index]
+		if prev_money ~= money then
+			local force = forces[_force_index]
+			force.item_production_statistics.on_flow("trading", money - prev_money)
+		end
+	end
+end
+
+
+function M.check_sell_markets()
+	local forces_money = call("EasyAPI", "get_forces_money")
+	---@cast forces_money table<uint, integer>
+
+	for force_index, _items_data in pairs(_sell_markets) do
+		local money = forces_money[force_index]
+		if money == nil then
+			goto skip_force
+		end
+
+		local prices = _sell_prices[force_index]
+		for item_name, entities in pairs(_items_data) do
+			local sell_price = prices[item_name]
+			_sell_stack.name = item_name
+			for i = 1, #entities do
+				local entity = entities[i]
+				--#if EXTRA_STABILITY then
+					if not entity.valid then
+						tremove(entities, i)
+						goto skip_selling
+					end
+				--#end
+				money = money + sell_price * entity.remove_item(_sell_stack)
+				:: skip_selling ::
+			end
+		end
+		forces_money[force_index] = money
+
+		:: skip_force ::
+	end
+
+	call("EasyAPI", "set_forces_money", forces_money)
+end
+
+
+---@param event on_player_changed_force
+function M.on_player_changed_force(event)
+	local player_index = event.player_index
+	local player = game.get_player(player_index)
+	if not (player and player.valid) then return end
+
+	local force_index = player.force_index
+	if _buy_markets[force_index] == nil then
+		init_force_data(force_index)
+	end
+end
+
+local mod_settings = {
+	["TSZO_update-buy-tick"] = function(value)
+		if _update_sell_tick == value then
+			settings.global["TSZO_update-buy-tick"] = {
+				value = value + 1
+			}
+			return
+		end
+		script.on_nth_tick(_update_buy_tick, nil)
+		_update_buy_tick = value
+		script.on_nth_tick(value, M.check_buy_markets)
+	end,
+	["TSZO_update-sell-tick"] = function(value)
+		if _update_buy_tick == value then
+			settings.global["TSZO_update-sell-tick"] = {
+				value = value + 1
+			}
+			return
+		end
+		script.on_nth_tick(_update_sell_tick, nil)
+		_update_sell_tick = value
+		script.on_nth_tick(value, M.check_buy_markets)
+	end,
+}
+function M.on_runtime_mod_setting_changed(event)
+	local setting_name = event.setting
+	local f = mod_settings[setting_name]
+	if f == nil then return end
+
+	if event.setting_type == "runtime-global" then
+		f(settings.global[setting_name].value)
+	else
+		local player = game.get_player(event.player_index)
+		if player and player.valid then
+			f(player)
+		end
+	end
+end
+
+--#endregion
+
+
+--#region Pre-game stage
+
+local function add_remote_interface()
+	-- https://lua-api.factorio.com/latest/LuaRemote.html
+	remote.remove_interface("trading_system") -- For safety
+	remote.add_interface("trading_system", {
+		get_mod_data = function() return _mod_data end,
+		get_internal_data = function(name) return _mod_data[name] end,
+		remove_certain_sell_market  = M.remove_certain_sell_market,
+		remove_certain_buy_market   = M.remove_certain_buy_market,
+		clear_market_data_by_entity = clear_market_data_by_entity,
+		clear_force_data = clear_force_data,
+		init_force_data  = init_force_data,
+		set_force_sell_market = M.set_force_sell_market,
+		set_force_buy_market  = M.set_force_buy_market,
+		set_sell_price_globally = set_sell_price_globally,
+		set_buy_price_globally  = set_buy_price_globally,
+		set_force_sell_price = set_force_sell_price,
+		set_force_buy_price  = set_force_buy_price,
+		get_sell_markets  = function() return _sell_markets end,
+		get_buy_markets   = function() return _buy_markets end,
+		get_sell_prices   = function() return _sell_prices end,
+		get_buy_prices    = function() return _buy_prices end,
+		get_all_markets   = function() return _all_markets end,
+	})
+end
+
+local function link_data()
+	_mod_data = global.TSZO
+	_buy_markets = _mod_data.buy_markets
+	_sell_markets = _mod_data.sell_markets
+	_buy_catalogue = _mod_data.buy_catalogue
+	_sell_catalogue = _mod_data.sell_catalogue
+	_last_sell_id = _mod_data.last_sell_id
+	_last_buy_id = _mod_data.last_buy_id
+	_sell_prices = _mod_data.sell_prices
+	_buy_prices = _mod_data.buy_prices
+	_global_sell_prices = _mod_data.global_sell_prices
+	_global_buy_prices = _mod_data.global_buy_prices
+	_all_markets = _mod_data.all_markets
+	_all_hidden_markets = _mod_data.all_hidden_markets
+end
+
+local function update_global_data()
+	global.TSZO = global.TSZO or {}
+	_mod_data = global.TSZO
+	_mod_data.item_hinter = _mod_data.item_hinter or {}
+	_mod_data.buy_markets = _mod_data.buy_markets or {}
+	_mod_data.sell_markets = _mod_data.sell_markets or {}
+	_mod_data.buy_catalogue = _mod_data.buy_catalogue or {}
+	_mod_data.sell_catalogue = _mod_data.sell_catalogue or {}
+	_mod_data.sell_prices = _mod_data.sell_prices or {}
+	_mod_data.buy_prices = _mod_data.buy_prices or {}
+	_mod_data.global_sell_prices = _mod_data.global_sell_prices or {}
+	_mod_data.global_buy_prices = _mod_data.global_buy_prices or {}
+	_mod_data.last_sell_id = _mod_data.last_sell_id or {}
+	_mod_data.last_buy_id = _mod_data.last_buy_id or {}
+	_mod_data.embargoes = _mod_data.embargoes or {}
+	_mod_data.all_markets = _mod_data.all_markets or {}
+	_mod_data.all_hidden_markets = _mod_data.all_hidden_markets or {}
+
+	link_data()
+
+	clear_invalid_data()
+
+	-- init_force_data(game.forces.player.index)
+
+	for _, force in pairs(game.forces) do
+		if force.valid then
+			-- if #force.players > 0 then
+				init_force_data(force.index)
+			-- end
+		end
+	end
+
+	detect_desync(game)
+end
+
+local function on_configuration_changed(event)
+	update_global_data()
+
+	-- local mod_changes = event.mod_changes["trading_system"]
+	-- if not (mod_changes and mod_changes.old_version) then return end
+
+	-- local version = tonumber(string.gmatch(mod_changes.old_version, "%d+.%d+")())
+end
+
+do
+	local function set_filters()
+		local filters = {
+			{filter = "type", mode = "or", type = "container"},
+			-- {filter = "type", mode = "or", type = "logistic-container"}
+		}
+		script.set_event_filter(defines.events.script_raised_built, filters)
+		script.set_event_filter(defines.events.on_robot_built_entity, filters)
+		script.set_event_filter(defines.events.on_built_entity, filters)
+		script.set_event_filter(defines.events.on_entity_died, filters)
+		script.set_event_filter(defines.events.on_robot_mined_entity, filters)
+		script.set_event_filter(defines.events.script_raised_destroy, filters)
+		script.set_event_filter(defines.events.on_player_mined_entity, filters)
+		script.set_event_filter(defines.events.on_entity_cloned, filters)
+
+		local EasyAPI_events = call("EasyAPI", "get_events")
+		if EasyAPI_events.on_fix_bugs then
+			script.on_event(EasyAPI_events.on_fix_bugs, function()
+				clear_invalid_entities()
+
+				detect_desync(game)
+			end)
+		end
+		if EasyAPI_events.on_sync then
+			script.on_event(EasyAPI_events.on_sync, function()
+				link_data()
+			end)
+		end
+	end
+
+	M.on_load = function()
+		link_data()
+		set_filters()
+	end
+	M.on_init = function()
+		update_global_data()
+		set_filters()
+	end
+end
+M.on_configuration_changed = on_configuration_changed
+M.add_remote_interface = add_remote_interface
+
+--#endregion
+
+
+M.events = {
+	[defines.events.on_surface_deleted] = clear_invalid_entities,
+	[defines.events.on_surface_cleared] = clear_invalid_entities,
+	[defines.events.on_chunk_deleted] = clear_invalid_entities,
+	[defines.events.on_player_joined_game] = M.on_player_joined_game,
+	[defines.events.on_player_changed_force] = M.on_player_changed_force,
+	[defines.events.on_gui_opened] = M.on_gui_opened,
+	[defines.events.on_market_item_purchased] = M.on_market_item_purchased,
+	[defines.events.on_force_created] = M.on_force_created,
+	[defines.events.on_forces_merging] = M.on_forces_merging,
+	[defines.events.script_raised_built] = M.script_raised_built,
+	[defines.events.on_robot_built_entity] = M.on_built_entity,
+	[defines.events.on_built_entity] = M.on_built_entity,
+	[defines.events.on_runtime_mod_setting_changed] = M.on_runtime_mod_setting_changed,
+	-- [defines.events.on_entity_settings_pasted] = function(event)
+	-- 	local source = event.source
+	-- 	if not (source and source.valid) then return end
+	-- 	local market_data = _all_markets[source.unit_number]
+	-- 	if market_data == nil then return end
+
+	-- 	local destination = event.destination
+	-- 	if not (destination and destination.valid) then return end
+	-- 	if destination.force ~= source.force then return end
+
+	-- 	local player = game.get_player(event.player_index)
+	-- 	if not (player and player.valid) then return end
+	-- end,
+	[defines.events.on_player_mined_entity] = M.clear_market_data,
+	[defines.events.on_robot_mined_entity] = M.clear_market_data,
+	[defines.events.script_raised_destroy] = M.clear_market_data,
+	[defines.events.on_entity_died] = M.clear_market_data
+}
+
+M.on_nth_tick = {
+	[_update_buy_tick] = M.check_buy_markets,
+	[_update_sell_tick] = M.check_sell_markets,
+}
+
+M.commands = {
+	---@param cmd CustomCommandData
+	["set-sell-price-globally"] = function(cmd)
+		local item_name, count = M.find_item_in_text(cmd.parameter)
+		if item_name == nil then return end
+
+		--#if DEBUG then
+			game.print("item_name: " .. item_name .. " price: " .. tostring(count))
+		--#end
+		set_sell_price_globally(item_name, count)
+	end,
+	---@param cmd CustomCommandData
+	["set-buy-price-globally"] = function(cmd)
+		local item_name, count = M.find_item_in_text(cmd.parameter)
+		if item_name == nil then return end
+
+		--#if DEBUG then
+			game.print("item_name: " .. item_name .. " price: " .. tostring(count))
+		--#end
+		set_buy_price_globally(item_name, count)
+	end
+}
+
+
+return M

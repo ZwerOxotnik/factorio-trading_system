@@ -1,4 +1,12 @@
 ﻿---------------------------------------------------------------------------------------------------
+Version: 0.0.6
+Date: 2023-08-28
+  Bugfixes:
+    - Fixed bugs caused by on_forces_merging event
+    - Fixed bugs related to on_entity_cloned event
+  Scripting:
+    - Improved the mod interface
+---------------------------------------------------------------------------------------------------
 Version: 0.0.5
 Date: 2023-08-28
   Bugfixes:

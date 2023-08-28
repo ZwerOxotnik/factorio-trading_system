@@ -7,16 +7,6 @@ local M = {}
 ---@type table<string, table>
 local _mod_data
 
--- {force index = {[item name] = price}}
----@class sell_prices
----@type table<uint, table<string, uint>>
-local _sell_prices
-
--- {force index = {[item name] = price}}
----@class buy_prices
----@type table<uint, table<string, uint>>
-local _buy_prices
-
 -- {[item name] = price}
 ---@class global_sell_prices
 ---@type table<string, uint>
@@ -26,6 +16,16 @@ local _global_sell_prices
 ---@class global_buy_prices
 ---@type table<string, uint>
 local _global_buy_prices
+
+-- {force index = {[item name] = price}}
+---@class sell_prices
+---@type table<uint, table<string, uint>>
+local _sell_prices
+
+-- {force index = {[item name] = price}}
+---@class buy_prices
+---@type table<uint, table<string, uint>>
+local _buy_prices
 
 -- {[force index] = uint}
 ---@type table<uint, uint>
@@ -75,9 +75,6 @@ local _all_hidden_markets
 local tremove = table.remove
 local call = remote.call
 local floor = math.floor
-local Rget_type = rendering.get_type
-local get_render_target = rendering.get_target
-local is_render_valid = rendering.is_valid
 local print_to_rcon = rcon.print
 --#if IGNORE_MACROSES then
 	local SELL_TYPE = 2
@@ -86,6 +83,8 @@ local print_to_rcon = rcon.print
 	--#define("SELL_TYPE", "2")
 	--#define("BUY_TYPE", "1")
 --#end
+---@type LuaEntity.destroy_param
+local DESTROY_PARAM = {raise_destroy = true}
 local MARKETS_TYPES = {
 	["TSZO_sell_container_3x2"] = SELL_TYPE,
 	["TSZO_buy_container_3x2"]  = BUY_TYPE,
@@ -146,7 +145,12 @@ function print_force_data(target, getter)
 	print_to_target('')
 	print_to_target("Sell prices:" .. serpent.line(_sell_prices[index]))
 	print_to_target("Buy prices:"  .. serpent.line(_buy_prices[index]))
+	print_to_target("Sell markets:" .. serpent.line(_sell_markets[index]))
 	print_to_target("Buy markets:" .. serpent.line(_buy_markets[index]))
+	print_to_target("Sell catalogue:" .. serpent.line(_sell_catalogue[index]))
+	print_to_target("Buy catalogue:" .. serpent.line(_buy_catalogue[index]))
+	print_to_target("_last_sell_id:" .. tostring(_last_sell_id[index]))
+	print_to_target("_last_buy_id:" .. tostring(_last_buy_id[index]))
 end
 
 
@@ -170,6 +174,7 @@ function check_local_and_global_data(local_data, global_data_name, receiver)
 	return false
 end
 
+
 ---@param receiver table?
 function detect_desync(receiver)
 	check_local_and_global_data(_sell_prices, "sell_prices", receiver)
@@ -182,6 +187,8 @@ function detect_desync(receiver)
 	check_local_and_global_data(_last_buy_id, "last_buy_id", receiver)
 	check_local_and_global_data(_global_sell_prices, "global_sell_prices", receiver)
 	check_local_and_global_data(_global_buy_prices, "global_buy_prices", receiver)
+	check_local_and_global_data(_all_markets, "all_markets", receiver)
+	check_local_and_global_data(_all_hidden_markets, "all_hidden_markets", receiver)
 end
 
 --#endregion
@@ -368,7 +375,7 @@ end
 function M.remove_hidden_market(entity)
 	if entity.valid then
 		_all_hidden_markets[entity.unit_number] = nil
-		entity.destroy()
+		entity.destroy(DESTROY_PARAM)
 	end
 end
 
@@ -402,8 +409,8 @@ end
 ---@param market_data all_markets
 function M.remove_certain_buy_market(entity, market_data)
 	_all_markets[entity.unit_number] = nil
-	M.remove_hidden_market(market_data[2])
 	M.remove_market_from_markets(entity, _buy_markets, market_data)
+	M.remove_hidden_market(market_data[2])
 end
 
 
@@ -411,8 +418,8 @@ end
 ---@param market_data all_markets
 function M.remove_certain_sell_market(entity, market_data)
 	_all_markets[entity.unit_number] = nil
-	M.remove_hidden_market(market_data[2])
 	M.remove_market_from_markets(entity, _sell_markets, market_data)
+	M.remove_hidden_market(market_data[2])
 end
 
 
@@ -433,30 +440,29 @@ local function clear_invalid_prices(prices)
 end
 
 
----@param _data buy_markets
-function clear_invalid_markets_data(_data)
-	-- TODO: recheck and FIX!
-	if true then return end
+---@param markets buy_markets|sell_markets?
+function clear_invalid_markets_data(markets)
+	if markets == nil then
+		clear_invalid_markets_data(_buy_markets)
+		clear_invalid_markets_data(_sell_markets)
+	end
+	---@cast markets buy_markets|sell_markets
 
 	local item_prototypes = game.item_prototypes
 	local forces = game.forces
-	for index, data in pairs(_data) do
-		if forces[index] == nil then
-			clear_force_data(index)
+	for force_index, force_data in pairs(markets) do
+		if forces[force_index] == nil then
+			clear_force_data(force_index) -- maybe it's wrong
 		else
-			for item_name, entities in pairs(data) do
+			for item_name, entities in pairs(force_data) do
 				if item_prototypes[item_name] == nil then
-					data[item_name] = nil
+					force_data[item_name] = nil
 					goto continue
 				end
 				for i=#entities, 1, -1 do
-					local market_data = entities[i]
-					local entity = market_data[1]
+					local entity = entities[i]
 					if entity.valid == false then
 						tremove(entities, i)
-					elseif not market_data[2] then
-						tremove(entities, i)
-						_all_markets[entity.unit_number] = nil
 					else
 						local _market_data = _all_markets[entity.unit_number]
 						if _market_data == nil then
@@ -468,9 +474,9 @@ function clear_invalid_markets_data(_data)
 					end
 				end
 				if #entities == 0 then
-					data[item_name] = nil
+					force_data[item_name] = nil
 				end
-			    ::continue::
+				::continue::
 			end
 		end
 	end
@@ -483,26 +489,30 @@ function clear_invalid_entities()
 		if not storage.valid then
 			_all_markets[unit_number] = nil
 		elseif not data[2].valid then
-			local hidden_market = data[2]
-			_all_hidden_markets[hidden_market.unit_number] = nil
-			hidden_market.destroy()
+			M.remove_hidden_market(data[2])
 			_all_markets[unit_number] = nil
 		else
 			local item_name = data[4]
 			if item_name and item_prototypes[item_name] == nil then
-				data[4] = nil
 				local market_type = data[3]
 				if market_type == BUY_TYPE then
 					M.remove_market_from_markets(storage, _buy_markets, data)
 				elseif market_type == SELL_TYPE then
 					M.remove_market_from_markets(storage, _sell_markets, data)
 				end
+				data[4] = nil -- remove item name
 			end
 		end
 	end
 
-	clear_invalid_markets_data(_buy_markets)
-	clear_invalid_markets_data(_sell_markets)
+	for unit_number, data in pairs(_all_hidden_markets) do
+		local market = data[1]
+		if not market.valid or not data[2].valid then
+			_all_hidden_markets[unit_number] = nil
+		end
+	end
+
+	clear_invalid_markets_data()
 end
 
 
@@ -664,8 +674,7 @@ local REMOVE_MARKETS_FUNCS = {
 function M.clear_market_data(event)
 	local entity = event.entity
 	if not entity.valid then return end
-	local unit_number = entity.unit_number
-	local market_data = _all_markets[unit_number]
+	local market_data = _all_markets[entity.unit_number]
 	if market_data == nil then return end
 
 	REMOVE_MARKETS_FUNCS[market_data[3]](entity, market_data)
@@ -673,8 +682,7 @@ end
 
 ---@param entity LuaEntity
 function clear_market_data_by_entity(entity)
-	local unit_number = entity.unit_number
-	local market_data = _all_markets[unit_number]
+	local market_data = _all_markets[entity.unit_number]
 	if market_data == nil then return end
 
 	REMOVE_MARKETS_FUNCS[market_data[3]](entity, market_data)
@@ -704,21 +712,8 @@ M.on_forces_merging = function(event)
 	local source = event.source
 	local source_index = source.index
 
+	-- TODO: improve, inspect and fix!
 	clear_force_data(source_index)
-
-	local ids = rendering.get_all_ids()
-	for i = 1, #ids do
-		local id = ids[i]
-		if is_render_valid(id) then
-			local target = get_render_target(id)
-			if target then
-				local entity = target.entity
-				if (not (entity and entity.valid) or entity.force == source) and Rget_type(id) == "text" then
-					_all_markets[entity.unit_number] = nil
-				end
-			end
-		end
-	end
 end
 
 

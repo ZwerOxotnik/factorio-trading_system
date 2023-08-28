@@ -7,7 +7,7 @@ local M = {}
 ---@type table<string, table>
 local all_commands = {} -- commands from other modules
 
-local MAX_INPUT_LENGTH = 500 -- set any number
+local MAX_INPUT_LENGTH = 20000 -- set any number
 local CONST_COMMANDS = require("__trading_system__/const-commands")
 local SWITCHABLE_COMMANDS = require("__trading_system__/switchable-commands")
 

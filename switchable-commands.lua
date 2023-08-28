@@ -18,4 +18,6 @@ Returns tables of commands without functions as command "settings". All paramete
 return {
 	["set-sell-price-globally"] = {is_allowed_empty_args = false, only_for_admin = true, allow_for_server = true},
 	["set-buy-price-globally"]  = {is_allowed_empty_args = false, only_for_admin = true, allow_for_server = true},
+	["import-global-prices-from-trading-system"] = {is_allowed_empty_args = false, only_for_admin = true, allow_for_server = true},
+	["export-global-prices-for-trading-system"]  = {is_allowed_empty_args = true,  only_for_admin = true, allow_for_server = true},
 }

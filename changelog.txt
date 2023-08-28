@@ -1,4 +1,9 @@
 ﻿---------------------------------------------------------------------------------------------------
+Version: 0.0.7
+Date: 2023-08-28
+  Features:
+    - Added new commands: /import-global-prices-from-trading-system /export-global-prices-for-trading-system
+---------------------------------------------------------------------------------------------------
 Version: 0.0.6
 Date: 2023-08-28
   Bugfixes:

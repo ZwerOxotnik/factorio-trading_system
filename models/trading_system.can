@@ -1305,7 +1305,43 @@ M.commands = {
 			game.print("item_name: " .. item_name .. " price: " .. tostring(count))
 		--#end
 		set_buy_price_globally(item_name, count)
-	end
+	end,
+	---@param cmd CustomCommandData
+	["export-global-prices-for-trading-system"] = function(cmd)
+		local data = game.table_to_json({
+			global_sell_prices = _global_sell_prices,
+			global_buy_prices  = _global_buy_prices
+		})
+		game.write_file("global-prices-for-trading-system.txt", data, false, cmd.player_index)
+		local message = "Saved data in global-prices-for-trading-system.txt"
+		if cmd.player_index == 0 then
+			print(message)
+		else
+			local player = game.get_player(cmd.player_index)
+			---TODO: add localization
+			player.print(message)
+		end
+	end,
+	---@param cmd CustomCommandData
+	["import-global-prices-from-trading-system"] = function(cmd)
+		local data = game.json_to_table(cmd.parameter)
+		if data == nil or (data.global_buy_prices == nil and data.global_sell_prices == nil) then
+			local message = "Invalid data"
+			if cmd.player_index == 0 then
+				print(message)
+			else
+				local player = game.get_player(cmd.player_index)
+				---TODO: add localization
+				player.print(message)
+			end
+			return
+		end
+
+		_mod_data.global_buy_prices = data.global_buy_prices
+		_global_buy_prices = _mod_data.global_buy_prices
+		_mod_data.global_sell_prices = data.global_sell_prices
+		_global_sell_prices = _mod_data.global_sell_prices
+	end,
 }
 
 

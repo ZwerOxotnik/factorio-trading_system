@@ -423,6 +423,24 @@ function M.remove_certain_sell_market(entity, market_data)
 end
 
 
+---@param prices global_buy_prices|global_sell_prices?
+local function clear_invalid_global_prices(prices)
+	if prices == nil then
+		clear_invalid_global_prices(_global_sell_prices)
+		clear_invalid_global_prices(_global_buy_prices)
+		return
+	end
+	---@cast prices global_buy_prices|global_sell_prices
+
+	local item_prototypes = game.item_prototypes
+	for item_name in pairs(prices) do
+		if item_prototypes[item_name] == nil then
+			prices[item_name] = nil
+		end
+	end
+end
+
+
 ---@param prices buy_prices|sell_prices?
 local function clear_invalid_prices(prices)
 	if prices == nil then
@@ -451,8 +469,8 @@ end
 ---@param markets buy_markets|sell_markets?
 function clear_invalid_markets_data(markets)
 	if markets == nil then
-		clear_invalid_markets_data(_buy_markets)
 		clear_invalid_markets_data(_sell_markets)
+		clear_invalid_markets_data(_buy_markets)
 		return
 	end
 	---@cast markets buy_markets|sell_markets
@@ -491,6 +509,32 @@ function clear_invalid_markets_data(markets)
 	end
 end
 
+---@param catalogue buy_catalogue|sell_catalogue?
+function clear_invalid_catalogue(catalogue)
+	if catalogue == nil then
+		clear_invalid_catalogue(_sell_catalogue)
+		clear_invalid_catalogue(_buy_catalogue)
+		return
+	end
+	---@cast catalogue buy_catalogue|sell_catalogue
+
+	local item_prototypes = game.item_prototypes
+	local forces = game.forces
+	for index, items in pairs(catalogue) do
+		if forces[index] == nil then
+			catalogue[index] = nil
+			goto continue
+		end
+		for i=#items, 1, -1 do
+			local item_name = items[i]
+			if item_prototypes[item_name] == nil then
+				table.remove(items, i)
+			end
+		end
+	    ::continue::
+	end
+end
+
 function clear_invalid_entities()
 	local item_prototypes = game.item_prototypes
 	for unit_number, data in pairs(_all_markets) do
@@ -526,7 +570,9 @@ end
 
 
 function clear_invalid_data()
+	clear_invalid_global_prices()
 	clear_invalid_prices()
+	clear_invalid_catalogue()
 	clear_invalid_entities()
 end
 

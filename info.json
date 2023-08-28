@@ -1,12 +1,12 @@
 {
 	"name": "trading_system",
-	"version": "0.0.4",
+	"version": "0.0.5",
 	"factorio_version": "1.1",
 	"title": "Trading system [extension for EasyAPI][PRE-ALPHA]",
 	"author": "ZwerOxotnik",
 	"contact": "zweroxotnik@gmail.com, Discord:ZwerOxotnik#7117",
 	"homepage": "https://reddit.com/r/ZwerOxotnik/",
-	"description": "Adds markets to sell and buy items.\nUse /set-sell-price-globally and /set-buy-price-globally to set prices\nWARNING: currently, doesn't properly check data for other mods during updates and for some game events, but it should work for vanilla",
+	"description": "See locale/*",
 	"dependencies": [
 		"EasyAPI >= 0.11.2",
 		"money-UI",

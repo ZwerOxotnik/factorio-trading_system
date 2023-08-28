@@ -1312,7 +1312,9 @@ M.commands = {
 			global_sell_prices = _global_sell_prices,
 			global_buy_prices  = _global_buy_prices
 		})
+
 		game.write_file("global-prices-for-trading-system.txt", data, false, cmd.player_index)
+
 		local message = "Saved data in global-prices-for-trading-system.txt"
 		if cmd.player_index == 0 then
 			print(message)
@@ -1337,10 +1339,15 @@ M.commands = {
 			return
 		end
 
-		_mod_data.global_buy_prices = data.global_buy_prices
-		_global_buy_prices = _mod_data.global_buy_prices
-		_mod_data.global_sell_prices = data.global_sell_prices
-		_global_sell_prices = _mod_data.global_sell_prices
+		if data.global_buy_prices then
+			_mod_data.global_buy_prices = data.global_buy_prices
+			_global_buy_prices = _mod_data.global_buy_prices
+		end
+
+		if data.global_sell_prices then
+			_mod_data.global_sell_prices = data.global_sell_prices
+			_global_sell_prices = _mod_data.global_sell_prices
+		end
 	end,
 }
 

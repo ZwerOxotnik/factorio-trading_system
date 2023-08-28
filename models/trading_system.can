@@ -423,7 +423,15 @@ function M.remove_certain_sell_market(entity, market_data)
 end
 
 
+---@param prices buy_prices|sell_prices?
 local function clear_invalid_prices(prices)
+	if prices == nil then
+		clear_invalid_prices(_buy_prices)
+		clear_invalid_prices(_sell_prices)
+		return
+	end
+	---@cast prices buy_prices|sell_prices
+
 	local item_prototypes = game.item_prototypes
 	local forces = game.forces
 	for index, forces_data in pairs(prices) do
@@ -445,6 +453,7 @@ function clear_invalid_markets_data(markets)
 	if markets == nil then
 		clear_invalid_markets_data(_buy_markets)
 		clear_invalid_markets_data(_sell_markets)
+		return
 	end
 	---@cast markets buy_markets|sell_markets
 
@@ -517,8 +526,7 @@ end
 
 
 function clear_invalid_data()
-	clear_invalid_prices(_sell_prices)
-	clear_invalid_prices(_buy_prices)
+	clear_invalid_prices()
 	clear_invalid_entities()
 end
 

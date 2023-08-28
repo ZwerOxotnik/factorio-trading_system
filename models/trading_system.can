@@ -884,9 +884,7 @@ function M.check_buy_markets()
 				end
 				local count = buy_market.get_item_count(item_name)
 				_buy_stack["name"] = item_name
-				if need_count < count then
-					stack_count = count
-				else
+				if need_count >= count then
 					need_count = need_count - count
 					if need_count <= 0 then
 						goto skip_buy

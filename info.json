@@ -6,7 +6,7 @@
 	"author": "ZwerOxotnik",
 	"contact": "zweroxotnik@gmail.com, Discord:ZwerOxotnik#7117",
 	"homepage": "https://reddit.com/r/ZwerOxotnik/",
-	"description": "See locale/*",
+	"description": "See locale/* ",
 	"dependencies": [
 		"EasyAPI >= 0.11.2",
 		"money-UI",

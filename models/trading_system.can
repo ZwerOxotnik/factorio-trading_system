@@ -3,8 +3,9 @@ local M = {}
 
 
 --#region Global data
+
 ---@class mod_data
----@type table<string, table>
+---@type table<string, any>
 local _mod_data
 
 -- {[item name] = price}
@@ -55,6 +56,7 @@ local _buy_catalogue
 ---@type table<uint, string[]>
 local _sell_catalogue
 
+
 ---@class market_data
 ---@field [1] LuaEntity # storage
 ---@field [2] LuaEntity # hidden market
@@ -64,6 +66,7 @@ local _sell_catalogue
 ---@class all_markets
 ---@type table<uint, market_data>
 local _all_markets
+
 
 ---@class hidden_market_data
 ---@field [1] LuaEntity # market
@@ -226,6 +229,96 @@ end
 --#region utils
 
 
+---@param json_text string?
+---@param table_data table? # do not use it remote interfaces
+function import_global_prices(json_text, table_data)
+	table_data = table_data or game.json_to_table(json_text)
+	local item_prototypes = game.item_prototypes
+
+	if data.global_buy_prices then
+		local new_prices = data.global_buy_prices
+		for item_name in pairs(new_prices) do
+			if not item_prototypes[item_name] then
+				new_prices[item_name] = nil
+			end
+		end
+
+		_mod_data.global_buy_prices = new_prices
+		_global_buy_prices = _mod_data.global_buy_prices
+
+		for force_index in pairs(_buy_markets) do
+			_buy_markets[force_index] = {}
+		end
+
+		for force_index in pairs(_buy_catalogue) do
+			---@type string[]
+			local new_catalogue = {nil}
+			for item_name in pairs(new_prices) do
+				new_catalogue[#new_catalogue+1] = item_name
+			end
+			_buy_catalogue[force_index] = new_catalogue
+			_last_buy_id[force_index] = _last_buy_id[force_index] + 1
+		end
+
+		for _, market_data in pairs(_all_markets) do
+			if market_data[3] == BUY_TYPE then
+				local market = market_data[2]
+				local item_name = market_data[4]
+				if item_name then
+					if new_prices[item_name] then
+						M.set_force_buy_market(item_name, market)
+					else
+						market_data[4] = nil
+					end
+				end
+				_all_hidden_markets[market.unit_number][3] = nil -- remove id update
+			end
+		end
+	end
+
+	if data.global_sell_prices then
+		local new_prices = data.global_sell_prices
+		for item_name in pairs(new_prices) do
+			if not item_prototypes[item_name] then
+				new_prices[item_name] = nil
+			end
+		end
+
+		_mod_data.global_sell_prices = new_prices
+		_global_sell_prices = _mod_data.global_sell_prices
+
+		for force_index in pairs(_sell_markets) do
+			_sell_markets[force_index] = {}
+		end
+
+		for force_index in pairs(_sell_catalogue) do
+			---@type string[]
+			local new_catalogue = {nil}
+			for item_name in pairs(new_prices) do
+				new_catalogue[#new_catalogue+1] = item_name
+			end
+			_sell_catalogue[force_index] = new_catalogue
+			_last_sell_id[force_index] = _last_sell_id[force_index] + 1
+		end
+
+		for _, market_data in pairs(_all_markets) do
+			if market_data[3] == SELL_TYPE then
+				local market = market_data[2]
+				local item_name = market_data[4]
+				if item_name then
+					if new_prices[item_name] then
+						M.set_force_sell_market(item_name, market)
+					else
+						market_data[4] = nil
+					end
+				end
+				_all_hidden_markets[market.unit_number][3] = nil -- remove id update
+			end
+		end
+	end
+end
+
+
 ---@param index number
 function clear_force_data(index)
 	local force = game.forces[index]
@@ -269,6 +362,8 @@ end
 -- TODO: improve (use global data)
 ---@param force_index uint?
 function disable_mod_recipes(force_index)
+	_mod_data.is_recipes_disabled = false
+
 	if force_index == nil then
 		for _, force in pairs(game.forces) do
 			force.recipes["TSZO_sell_container_3x2"].enabled = false
@@ -286,6 +381,8 @@ end
 -- TODO: improve (use global data)
 ---@param force_index uint?
 function enable_mod_recipes(force_index)
+	_mod_data.is_recipes_disabled = true
+
 	if force_index == nil then
 		for _, force in pairs(game.forces) do
 			force.recipes["TSZO_sell_container_3x2"].enabled = true
@@ -375,8 +472,8 @@ function set_force_sell_price(force_index, item_name, price)
 	local prev_price = f_sell_prices[item_name]
 	f_sell_prices[item_name] = price
 	if (prev_price == nil and price) or (prev_price and price == nil) then
-		---@type buy_catalogue
-		local new_catalogue = {}
+		---@type string[]
+		local new_catalogue = {nil}
 		local prices = _sell_prices[force_index]
 		for _item_name in pairs(prices) do
 			new_catalogue[#new_catalogue+1] = _item_name
@@ -405,8 +502,8 @@ function set_force_buy_price(force_index, item_name, price)
 	local prev_price = f_buy_prices[item_name]
 	f_buy_prices[item_name] = price
 	if prev_price == nil and price or prev_price and price == nil then
-		---@type buy_catalogue
-		local new_catalogue = {}
+		---@type string[]
+		local new_catalogue = {nil}
 		local prices = _buy_prices[force_index]
 		for _item_name in pairs(prices) do
 			new_catalogue[#new_catalogue+1] = _item_name
@@ -582,7 +679,7 @@ function clear_invalid_catalogue(catalogue)
 		for i=#items, 1, -1 do
 			local item_name = items[i]
 			if item_prototypes[item_name] == nil then
-				table.remove(items, i)
+				tremove(items, i)
 			end
 		end
 	    ::continue::
@@ -811,8 +908,13 @@ end
 
 function M.on_force_created(event)
 	local force = event.force
-	if force.valid then
-		init_force_data(force.index)
+	if not force.valid then return end
+
+	local force_index = force.index
+	init_force_data(force_index)
+
+	if _mod_data.is_recipes_disabled then
+		disable_mod_recipes(force_index)
 	end
 end
 
@@ -1111,6 +1213,7 @@ local function add_remote_interface()
 	remote.add_interface("trading_system", {
 		get_mod_data = function() return _mod_data end,
 		get_internal_data = function(name) return _mod_data[name] end,
+		import_global_prices = import_global_prices,
 		clear_invalid_data = clear_invalid_data,
 		clear_invalid_entities = clear_invalid_entities,
 		remove_certain_sell_market  = M.remove_certain_sell_market,
@@ -1155,6 +1258,7 @@ end
 local function update_global_data()
 	global.TSZO = global.TSZO or {}
 	_mod_data = global.TSZO
+	_mod_data.is_recipes_disabled = _mod_data.is_recipes_disabled or false
 	_mod_data.item_hinter = _mod_data.item_hinter or {}
 	_mod_data.buy_markets = _mod_data.buy_markets or {}
 	_mod_data.sell_markets = _mod_data.sell_markets or {}
@@ -1327,7 +1431,7 @@ M.commands = {
 	---@param cmd CustomCommandData
 	["import-global-prices-from-trading-system"] = function(cmd)
 		local data = game.json_to_table(cmd.parameter)
-		if data == nil or (data.global_buy_prices == nil and data.global_sell_prices == nil) then
+		if type(data) ~= "table" or (data.global_buy_prices == nil and data.global_sell_prices == nil) then
 			local message = "Invalid data"
 			if cmd.player_index == 0 then
 				print(message)
@@ -1339,15 +1443,7 @@ M.commands = {
 			return
 		end
 
-		if data.global_buy_prices then
-			_mod_data.global_buy_prices = data.global_buy_prices
-			_global_buy_prices = _mod_data.global_buy_prices
-		end
-
-		if data.global_sell_prices then
-			_mod_data.global_sell_prices = data.global_sell_prices
-			_global_sell_prices = _mod_data.global_sell_prices
-		end
+		import_global_prices(nil, data)
 	end,
 }
 

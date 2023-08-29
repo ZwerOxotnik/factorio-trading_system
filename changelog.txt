@@ -1,4 +1,12 @@
 ﻿---------------------------------------------------------------------------------------------------
+Version: 0.0.9
+Date: 2023-08-29
+  Bugfixes:
+    - Fixed bugs because of /import-global-prices-from-trading-system
+  Scripting:
+    - Added "import_global_prices(json_text)" to remote interface
+    - Automatically disables recipes by scripts now
+---------------------------------------------------------------------------------------------------
 Version: 0.0.8
 Date: 2023-08-28
   Bugfixes:

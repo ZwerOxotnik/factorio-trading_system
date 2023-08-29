@@ -232,11 +232,12 @@ end
 ---@param json_text string?
 ---@param table_data table? # do not use it remote interfaces
 function import_global_prices(json_text, table_data)
-	table_data = table_data or game.json_to_table(json_text)
-	local item_prototypes = game.item_prototypes
+	local table_data = table_data or game.json_to_table(json_text)
+	if table_data == nil or type(table_data) ~= "table" then return end
 
-	if data.global_buy_prices then
-		local new_prices = data.global_buy_prices
+	local item_prototypes = game.item_prototypes
+	if table_data.global_buy_prices then
+		local new_prices = table_data.global_buy_prices
 		for item_name in pairs(new_prices) do
 			if not item_prototypes[item_name] then
 				new_prices[item_name] = nil
@@ -248,6 +249,15 @@ function import_global_prices(json_text, table_data)
 
 		for force_index in pairs(_buy_markets) do
 			_buy_markets[force_index] = {}
+		end
+
+		for force_index in pairs(_buy_prices) do
+			---@type string[]
+			local new_price_list = {nil}
+			for item_name, price in pairs(new_prices) do
+				new_price_list[item_name] = price
+			end
+			_buy_prices[force_index] = new_price_list
 		end
 
 		for force_index in pairs(_buy_catalogue) do
@@ -266,7 +276,7 @@ function import_global_prices(json_text, table_data)
 				local item_name = market_data[4]
 				if item_name then
 					if new_prices[item_name] then
-						M.set_force_buy_market(item_name, market)
+						M.set_force_buy_market(item_name, market_data[1])
 					else
 						market_data[4] = nil
 					end
@@ -276,8 +286,8 @@ function import_global_prices(json_text, table_data)
 		end
 	end
 
-	if data.global_sell_prices then
-		local new_prices = data.global_sell_prices
+	if table_data.global_sell_prices then
+		local new_prices = table_data.global_sell_prices
 		for item_name in pairs(new_prices) do
 			if not item_prototypes[item_name] then
 				new_prices[item_name] = nil
@@ -289,6 +299,15 @@ function import_global_prices(json_text, table_data)
 
 		for force_index in pairs(_sell_markets) do
 			_sell_markets[force_index] = {}
+		end
+
+		for force_index in pairs(_sell_prices) do
+			---@type string[]
+			local new_price_list = {nil}
+			for item_name, price in pairs(new_prices) do
+				new_price_list[item_name] = price
+			end
+			_sell_prices[force_index] = new_price_list
 		end
 
 		for force_index in pairs(_sell_catalogue) do
@@ -307,7 +326,7 @@ function import_global_prices(json_text, table_data)
 				local item_name = market_data[4]
 				if item_name then
 					if new_prices[item_name] then
-						M.set_force_sell_market(item_name, market)
+						M.set_force_sell_market(item_name, market_data[1])
 					else
 						market_data[4] = nil
 					end
@@ -1241,38 +1260,36 @@ end
 
 local function link_data()
 	_mod_data = global.TSZO
-	_buy_markets = _mod_data.buy_markets
+	_buy_markets  = _mod_data.buy_markets
 	_sell_markets = _mod_data.sell_markets
-	_buy_catalogue = _mod_data.buy_catalogue
+	_buy_catalogue  = _mod_data.buy_catalogue
 	_sell_catalogue = _mod_data.sell_catalogue
 	_last_sell_id = _mod_data.last_sell_id
-	_last_buy_id = _mod_data.last_buy_id
+	_last_buy_id  = _mod_data.last_buy_id
 	_sell_prices = _mod_data.sell_prices
-	_buy_prices = _mod_data.buy_prices
+	_buy_prices  = _mod_data.buy_prices
 	_global_sell_prices = _mod_data.global_sell_prices
-	_global_buy_prices = _mod_data.global_buy_prices
-	_all_markets = _mod_data.all_markets
+	_global_buy_prices  = _mod_data.global_buy_prices
 	_all_hidden_markets = _mod_data.all_hidden_markets
+	_all_markets = _mod_data.all_markets
 end
 
 local function update_global_data()
 	global.TSZO = global.TSZO or {}
 	_mod_data = global.TSZO
 	_mod_data.is_recipes_disabled = _mod_data.is_recipes_disabled or false
-	_mod_data.item_hinter = _mod_data.item_hinter or {}
-	_mod_data.buy_markets = _mod_data.buy_markets or {}
+	_mod_data.buy_markets  = _mod_data.buy_markets or {}
 	_mod_data.sell_markets = _mod_data.sell_markets or {}
-	_mod_data.buy_catalogue = _mod_data.buy_catalogue or {}
+	_mod_data.buy_catalogue  = _mod_data.buy_catalogue or {}
 	_mod_data.sell_catalogue = _mod_data.sell_catalogue or {}
 	_mod_data.sell_prices = _mod_data.sell_prices or {}
-	_mod_data.buy_prices = _mod_data.buy_prices or {}
+	_mod_data.buy_prices  = _mod_data.buy_prices or {}
 	_mod_data.global_sell_prices = _mod_data.global_sell_prices or {}
-	_mod_data.global_buy_prices = _mod_data.global_buy_prices or {}
+	_mod_data.global_buy_prices  = _mod_data.global_buy_prices or {}
 	_mod_data.last_sell_id = _mod_data.last_sell_id or {}
-	_mod_data.last_buy_id = _mod_data.last_buy_id or {}
-	_mod_data.embargoes = _mod_data.embargoes or {}
-	_mod_data.all_markets = _mod_data.all_markets or {}
+	_mod_data.last_buy_id  = _mod_data.last_buy_id or {}
 	_mod_data.all_hidden_markets = _mod_data.all_hidden_markets or {}
+	_mod_data.all_markets = _mod_data.all_markets or {}
 
 	link_data()
 
@@ -1417,9 +1434,10 @@ M.commands = {
 			global_buy_prices  = _global_buy_prices
 		})
 
-		game.write_file("global-prices-for-trading-system.txt", data, false, cmd.player_index)
+		local file_name = "global-prices-for-trading-system.json"
+		game.write_file(file_name, data, false, cmd.player_index)
 
-		local message = "Saved data in global-prices-for-trading-system.txt"
+		local message = "Saved data in script-output/" .. file_name
 		if cmd.player_index == 0 then
 			print(message)
 		else

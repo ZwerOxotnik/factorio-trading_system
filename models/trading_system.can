@@ -107,6 +107,32 @@ local MARKETS_TO_HIDDEN = {
 	["TSZO_buy_container_3x2"]  = "TSZO_hidden_buy_market_3x2",
 }
 
+---@type table<string, uint>
+local DEFAULT_SELL_PRICES = {}
+for mod_name in pairs(script.active_mods) do
+	local _is_ok, _price_list = pcall(require, string.format("__%s__/sell_prices_for_trading_system", mod_name))
+	if _is_ok and type(_price_list) == "table" then
+		for name, price in pairs(_price_list) do
+			if type(name) == "string" and type(price) == "number" and price >= 1 then
+				DEFAULT_SELL_PRICES[name] = math.floor(price) --[[@as uint]]
+			end
+		end
+	end
+end
+
+---@type table<string, uint>
+local DEFAULT_BUY_PRICES = {}
+for mod_name in pairs(script.active_mods) do
+	local _is_ok, _price_list = pcall(require, string.format("__%s__/buy_prices_for_trading_system", mod_name))
+	if _is_ok and type(_price_list) == "table" then
+		for name, price in pairs(_price_list) do
+			if type(name) == "string" and type(price) == "number" and price >= 1 then
+				DEFAULT_BUY_PRICES[name] = math.floor(price) --[[@as uint]]
+			end
+		end
+	end
+end
+
 --#endregion
 
 
@@ -158,8 +184,8 @@ function print_force_data(target, getter)
 	print_to_target("Buy markets:" .. serpent.line(_buy_markets[index]))
 	print_to_target("Sell catalogue:" .. serpent.line(_sell_catalogue[index]))
 	print_to_target("Buy catalogue:" .. serpent.line(_buy_catalogue[index]))
-	print_to_target("_last_sell_id:" .. tostring(_last_sell_id[index]))
-	print_to_target("_last_buy_id:" .. tostring(_last_buy_id[index]))
+	print_to_target("_last_sell_id:" .. tostring(_last_sell_id[index]or ""))
+	print_to_target("_last_buy_id:" .. tostring(_last_buy_id[index] or ""))
 end
 
 
@@ -1284,8 +1310,27 @@ local function update_global_data()
 	_mod_data.sell_catalogue = _mod_data.sell_catalogue or {}
 	_mod_data.sell_prices = _mod_data.sell_prices or {}
 	_mod_data.buy_prices  = _mod_data.buy_prices or {}
-	_mod_data.global_sell_prices = _mod_data.global_sell_prices or {}
-	_mod_data.global_buy_prices  = _mod_data.global_buy_prices or {}
+
+	local item_prototypes = game.item_prototypes
+	if _mod_data.global_sell_prices == nil then
+		local new_price_list = {}
+		for name, price in pairs(DEFAULT_SELL_PRICES) do
+			if item_prototypes[name] then
+				new_price_list[name] = price
+			end
+		end
+		_mod_data.global_sell_prices = new_price_list
+	end
+		if _mod_data.global_buy_prices == nil then
+		local new_price_list = {}
+		for name, price in pairs(DEFAULT_BUY_PRICES) do
+			if item_prototypes[name] then
+				new_price_list[name] = price
+			end
+		end
+		_mod_data.global_buy_prices = new_price_list
+	end
+
 	_mod_data.last_sell_id = _mod_data.last_sell_id or {}
 	_mod_data.last_buy_id  = _mod_data.last_buy_id or {}
 	_mod_data.all_hidden_markets = _mod_data.all_hidden_markets or {}

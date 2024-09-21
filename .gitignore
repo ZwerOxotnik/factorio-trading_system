@@ -171,6 +171,3 @@ docs/_build
 
 # Factorio debug files
 .vscode/factorio/*
-
-# .can output
-models/trading_system*.lua

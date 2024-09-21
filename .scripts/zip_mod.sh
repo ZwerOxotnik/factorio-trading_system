@@ -70,7 +70,7 @@ fi
 ### https://www.7-zip.org/download.html
 local name="${MOD_NAME}_${MOD_VERSION}"
 if command -v git &> /dev/null; then
-	git add models/trading_system.lua
+	git add models/trading_system-stable.lua
 	git add models/trading_system-debug.lua
 	git add models/trading_system-extra-stability.lua
 	git commit -m "Don't delete this files"

@@ -153,6 +153,13 @@ local _sell_stack = {name = "", count = 4000000000}
 --#region Global functions
 
 
+---@param price number
+---@return boolean
+local function is_price_valid(price)
+	return (price >= 0 and price < 65535)
+end
+
+
 ---@param target  LuaForce|LuaPlayer # From whom the data?
 ---@param getter? LuaForce|LuaPlayer # Print to whom? (game by default)
 function print_force_data(target, getter)
@@ -488,31 +495,43 @@ end
 
 ---@param item_name string
 ---@param price uint?
+---@return boolean
 function set_buy_price_globally(item_name, price)
+	if price and not is_price_valid(price) then return false end
+
 	_global_buy_prices[item_name] = price
 	for force_index in pairs(_buy_prices) do
 		set_force_buy_price(force_index, item_name, price)
 	end
+
+	return true
 end
 
 
 ---@param item_name string
 ---@param price uint?
+---@return boolean
 function set_sell_price_globally(item_name, price)
+	if price and not is_price_valid(price) then return false end
+
 	_global_sell_prices[item_name] = price
 	for force_index in pairs(_sell_prices) do
 		set_force_sell_price(force_index, item_name, price)
 	end
+
+	return true
 end
 
 
 ---@param force_index uint
 ---@param item_name string
 ---@param price uint?
+---@return boolean
 function set_force_sell_price(force_index, item_name, price)
 	local f_sell_prices = _sell_prices[force_index]
-	if f_sell_prices == nil then return end
+	if f_sell_prices == nil then return false end
 
+	if price and not is_price_valid(price) then return false end
 
 	local prev_price = f_sell_prices[item_name]
 	f_sell_prices[item_name] = price
@@ -534,15 +553,20 @@ function set_force_sell_price(force_index, item_name, price)
 	end
 
 	_last_sell_id[force_index] = _last_sell_id[force_index] + 1
+
+	return true
 end
 
 
 ---@param force_index uint
 ---@param item_name string
 ---@param price uint?
+---@return boolean
 function set_force_buy_price(force_index, item_name, price)
 	local f_buy_prices = _buy_prices[force_index]
-	if f_buy_prices == nil then return end
+	if f_buy_prices == nil then return false end
+
+	if price and not is_price_valid(price) then return false end
 
 	local prev_price = f_buy_prices[item_name]
 	f_buy_prices[item_name] = price
@@ -564,6 +588,8 @@ function set_force_buy_price(force_index, item_name, price)
 	end
 
 	_last_buy_id[force_index] = _last_buy_id[force_index] + 1
+
+	return true
 end
 
 
@@ -1454,23 +1480,37 @@ M.on_nth_tick = {
 M.commands = {
 	---@param cmd CustomCommandData
 	["set-sell-price-globally"] = function(cmd)
-		local item_name, count = M.find_item_in_text(cmd.parameter)
+		local item_name, price = M.find_item_in_text(cmd.parameter)
 		if item_name == nil then return end
 
+		if not is_price_valid(price) then
+			local player = game.get_player(cmd.player_index)
+			if not (player and player.valid) then return end
+			player.print("The data type allows values from 0 to 65535", {1, 0, 0}) -- TODO: add localization
+			return
+		end
+
 		--#if DEBUG then
-			game.print("item_name: " .. item_name .. " price: " .. tostring(count))
+			game.print("item_name: " .. item_name .. " price: " .. tostring(price))
 		--#end
-		set_sell_price_globally(item_name, count)
+		set_sell_price_globally(item_name, price)
 	end,
 	---@param cmd CustomCommandData
 	["set-buy-price-globally"] = function(cmd)
-		local item_name, count = M.find_item_in_text(cmd.parameter)
+		local item_name, price = M.find_item_in_text(cmd.parameter)
 		if item_name == nil then return end
 
+		if not is_price_valid(price) then
+			local player = game.get_player(cmd.player_index)
+			if not (player and player.valid) then return end
+			player.print("The data type allows values from 0 to 65535",  {1, 0, 0}) -- TODO: add localization
+			return
+		end
+
 		--#if DEBUG then
-			game.print("item_name: " .. item_name .. " price: " .. tostring(count))
+			game.print("item_name: " .. item_name .. " price: " .. tostring(price))
 		--#end
-		set_buy_price_globally(item_name, count)
+		set_buy_price_globally(item_name, price)
 	end,
 	---@param cmd CustomCommandData
 	["export-global-prices-for-trading-system"] = function(cmd)

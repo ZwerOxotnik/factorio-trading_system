@@ -1324,6 +1324,9 @@ local function link_data()
 	_global_buy_prices  = _mod_data.global_buy_prices
 	_all_hidden_markets = _mod_data.all_hidden_markets
 	_all_markets = _mod_data.all_markets
+
+	local id = call("EasyAPI", "get_event_name", "on_entity_changed_force")
+	script.on_event(id, M.clear_market_data)
 end
 
 local function update_global_data()

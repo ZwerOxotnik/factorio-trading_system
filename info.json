@@ -1,6 +1,6 @@
 {
 	"name": "trading_system",
-	"version": "0.0.15",
+	"version": "0.1.0",
 	"factorio_version": "1.1",
 	"title": "Trading system [extension for EasyAPI][PRE-ALPHA]",
 	"author": "ZwerOxotnik",
@@ -8,7 +8,7 @@
 	"homepage": "https://reddit.com/r/ZwerOxotnik/",
 	"description": "See locale/*",
 	"dependencies": [
-		"EasyAPI >= 0.11.2",
+		"EasyAPI >= 0.12.2",
 		"money-UI",
 		"zk-lib",
 		"? gvv",

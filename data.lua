@@ -26,8 +26,8 @@ local market_recipe_template = {
   type = "recipe",
   enabled = true,
   ingredients = {
-		{"steel-plate", 100},
-		{"copper-plate", 100}
+	{type = "item", name = "steel-plate",  amount = 100},
+	{type = "item", name = "copper-plate", amount = 100}
   },
   energy_required = 15,
 }
@@ -58,7 +58,7 @@ local function create_market(name, scale)
 
 
 	local market_recipe = table.deepcopy(market_recipe_template)
-	market_recipe.result = market_name
+	market_recipe.results = {{type = "item", name = market_name, amount = 1}}
 	market_recipe.name = market_name
 
 	data:extend{market_as_container, market_as_item, hidden_market, market_recipe}
